@@ -1,4 +1,4 @@
-import { Network, DataSet, Node, Edge } from 'vis-network/standalone';
+﻿import { Network, DataSet, Node, Edge } from 'vis-network/standalone';
 import { InaccessibleStatesOptimizer } from './InaccessibleStatesOptimizer.ts';
 import { DFAMainView } from '../views/DFAMainView.ts';
 import { DFAModel, State } from '../DFAModel.ts';
@@ -23,6 +23,12 @@ export class InaccessibleStatesSimulator {
     protected stepByStepInput: string = '';
     protected currentIndex: number = 0;
     protected stepByStepActive: boolean = false;
+
+    protected removalStepIndex: number = 0;
+    protected inaccessibleStates: State[] = [];
+    protected inaccessibleRemovalDone: boolean = false;
+
+
 
     /**
      * The constructor receives the Automata instance
@@ -251,58 +257,203 @@ export class InaccessibleStatesSimulator {
     /**
      * Executes the simulation in a step-by-step manner
      */
+   
+
+    onPlayStepByStepOptimization = async () => {
+        // Initial setup
+        if (!this.stepByStepActive) {
+            this.stepByStepActive = true;
+            this.mainView?.clearLog();
+            this.mainView?.logMessage('Step-by-step: Removing inaccessible states...', 'success');
+
+            // Step 0: Highlight initial state
+            await this.highlightState(this.model.getInitialState(), 'orange');
+            this.mainView?.logMessage('Searching for inaccessible states...');
+            this.removalStepIndex = 0;
+
+            // Step 1: Calculate inaccessible states
+            const accessible = this.getAccessibleStates();
+            this.inaccessibleStates = this.model.states.filter(s => !accessible.includes(s.name));
+
+            if (this.inaccessibleStates.length === 0) {
+                this.mainView?.logMessage('No inaccessible states found - automaton is already optimal.', 'success');
+                this.inaccessibleRemovalDone = true;
+                return;
+            }
+
+            if (this.inaccessibleStates.length === 1) {
+                this.mainView?.logMessage('Found 1 inaccessible state:', 'error');
+            } else {
+                this.mainView?.logMessage(`Found ${this.inaccessibleStates.length} inaccessible states:`, 'error');
+            }
+        }
+
+        // If finished
+        if (this.inaccessibleRemovalDone) {
+            this.mainView?.logMessage('All inaccessible states removed. Ready for simulation.', 'success');
+            this.stepByStepActive = false;
+            return;
+        }
+
+        // Step-by-step removal
+        if (this.removalStepIndex < this.inaccessibleStates.length) {
+            const stateToRemove = this.inaccessibleStates[this.removalStepIndex];
+            this.mainView?.logMessage(`Removing: ${stateToRemove.name}`, 'error');
+            await this.highlightState(stateToRemove, 'red');
+            this.removalStepIndex++;
+        } else {
+            // All inaccessible states have been processed
+            this.model.states = this.model.states.filter(s => !this.inaccessibleStates.includes(s));
+            this.model.transitions = this.model.transitions.filter(t =>
+                !this.inaccessibleStates.some(s => s.name === t.from || s.name === t.to)
+            );
+
+            const initialState = this.model.states.find(s => s.initial);
+            if (!initialState) {
+                this.mainView?.logMessage('No initial state found after optimization', 'error');
+                return;
+            }
+            this.model.currentState = this.model.states.indexOf(initialState);
+
+            this.updateNetwork();
+            this.inaccessibleRemovalDone = true;
+            this.mainView?.logMessage('Automaton optimized successfully!', 'success');
+        }
+
+    };
+
+
     onPlayStepByStepSimulation = async () => {
-        // Check if the "Step By Step" mode is being initiated
+        // First: handle step-by-step removal of inaccessible states
+        if (!this.inaccessibleRemovalDone) {
+            // Initialize step-by-step removal
+            if (!this.stepByStepActive) {
+                this.stepByStepActive = true;
+                this.mainView?.clearLog();
+                this.mainView?.logMessage('Step-by-step: Removing inaccessible states...', 'success');
+
+                // Highlight initial state
+                await this.highlightState(this.model.getInitialState(), 'orange');
+                this.mainView?.logMessage('Searching for inaccessible states...');
+                this.removalStepIndex = 0;
+
+                // Calculate inaccessible states
+                const accessible = this.getAccessibleStates();
+                this.inaccessibleStates = this.model.states.filter(s => !accessible.includes(s.name));
+
+                if (this.inaccessibleStates.length === 0) {
+                    this.mainView?.logMessage('No inaccessible states found - automaton is already optimal.', 'success');
+                    this.inaccessibleRemovalDone = true;
+                    this.stepByStepActive = false;
+                    return;
+                }
+
+                this.mainView?.logMessage(
+                    `Found ${this.inaccessibleStates.length} inaccessible state(s): ${this.inaccessibleStates.map(s => s.name).join(', ')}`,
+                    'error'
+                );
+                return;
+            }
+
+            // Remove each inaccessible state one at a time
+            if (this.removalStepIndex < this.inaccessibleStates.length) {
+                const stateToRemove = this.inaccessibleStates[this.removalStepIndex];
+                this.mainView?.logMessage(`Removing: ${stateToRemove.name}`, 'error');
+                await this.highlightState(stateToRemove, 'red');
+                this.removalStepIndex++;
+                return;
+            }
+
+            // Finalize removal
+            this.model.states = this.model.states.filter(s => !this.inaccessibleStates.includes(s));
+            this.model.transitions = this.model.transitions.filter(t =>
+                !this.inaccessibleStates.some(s => s.name === t.from || s.name === t.to)
+            );
+
+            // Reset currentState if initial state was shifted in index
+            const initialStateName = this.model.getInitialState().name;
+            const updatedInitialState = this.model.states.find(s => s.name === initialStateName);
+            if (updatedInitialState) {
+                this.model.currentState = this.model.states.indexOf(updatedInitialState);
+            }
+
+            this.updateNetwork();
+            this.inaccessibleRemovalDone = true;
+            this.stepByStepActive = false;
+            this.mainView?.logMessage('Automaton optimized successfully!', 'success');
+            return;
+        }
+
+        // --- DFA input simulation ---
         if (!this.stepByStepActive) {
             this.stepByStepActive = true;
             this.stepByStepInput = this.mainView!.getTestInput();
             if (!this.stepByStepInput) {
                 alert('Please enter input for simulation');
+                this.stepByStepActive = false;
                 return;
             }
 
-            // reset the simulation state
+            // Reset simulation state
             this.mainView?.clearLog();
             this.mainView?.logMessage(`Step-by-step for: ${this.stepByStepInput}`, 'success');
-            this.model.currentState = this.model.states.indexOf(this.model.getInitialState());
-            this.highlightStateAndEdge(this.model.getInitialState());
+            const initialState = this.model.getInitialState();
+            this.model.currentState = this.model.states.indexOf(initialState);
+            this.highlightStateAndEdge(initialState);
             this.currentIndex = 0;
+            return;
         }
 
-        // check if we've processed all input
+        // Log the states and transitions for debugging
+        console.log('States:', this.model.states.map(s => `${s.name} (final: ${s.final})`));
+        console.log('Transitions:', this.model.transitions);
+
+        // Check if all input is processed
         if (this.currentIndex >= this.stepByStepInput.length) {
             this.mainView?.logMessage('Simulation complete');
             this.stepByStepActive = false;
             return;
         }
 
-        // process current character
+        // Process current character
         const char = this.stepByStepInput[this.currentIndex];
+        const currentState = this.model.states[this.model.currentState];
+        this.mainView?.logMessage(`Current state: ${currentState.name}`);
         this.mainView?.logMessage(`Processing: ${char}`);
-        
-        const nextState = await this.transitionFunction(char);
-        if (nextState === -1) {
-            this.network?.updateClusteredNode(this.model.states[this.model.currentState].name, { color: 'palevioletred' });
+
+        // Log the available transitions from the current state
+        const availableTransitions = this.model.transitions.filter(t => t.from === currentState.name);
+        console.log(`Available transitions from ${currentState.name}:`, availableTransitions);
+
+        // Get the next state for the current character
+        const nextStateIndex = await this.transitionFunction(char);
+
+        // Check if the nextStateIndex is valid
+        if (nextStateIndex === -1) {
+            this.network?.updateClusteredNode(currentState.name, { color: 'palevioletred' });
             this.mainView?.logMessage('Input rejected', 'error');
             this.stepByStepActive = false;
             return;
         }
 
-        // update state and index
-        this.model.currentState = nextState;
+        // Update the current state and index
+        this.model.currentState = nextStateIndex;
         this.currentIndex++;
 
-        // check if we've reached the end
+        // Final state check
         if (this.currentIndex === this.stepByStepInput.length) {
             const finalState = this.model.states[this.model.currentState];
+            this.mainView?.logMessage(`Final state: ${finalState.name}`);
             if (finalState.final) {
                 this.mainView?.logMessage('Input accepted', 'success');
             } else {
                 this.mainView?.logMessage('Input rejected', 'error');
             }
+            this.resetNodesColors();
             this.stepByStepActive = false;
         }
     };
+
 
     /**
      * Handler that will be invoked when a new node will be added
@@ -365,6 +516,7 @@ export class InaccessibleStatesSimulator {
             color: 'lightgreen' 
         };
     }
+
 
     /**
      * The transition function that handles moving to the next state
