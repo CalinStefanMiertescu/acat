@@ -5,6 +5,7 @@ import { AppLogo } from './modules/menu/app-logo/AppLogo.ts';
 import { DFASimulation } from './modules/automata/finite-automata/DFASimulation.ts';
 import { Theme } from './modules/theme/theme.ts';
 import { OptimizingInaccessibleStatesSimulation } from './modules/automata/finite-automata/dfa/InaccessibleStates/OptimizingInaccessibleStatesSimulation.ts'; // Importăm noua simulare
+import { OptimizingInseparableStatesSimulation } from './modules/automata/finite-automata/dfa/InseparableStates/OptimizingInseparableStatesSimulation.ts';
 import { SystemInteraction } from './modules/system-interaction/SystemInteraction.ts';
 import { Localization } from './modules/localization/views/Localization.ts';
 
@@ -19,6 +20,7 @@ export const ModuleNames = {
     DeterministicFiniteAutomata: 'automata-dfa',
     Theme: 'theme-button',
     OptimizingInaccessibleStatesSimulation: 'optimized-inaccessible-dfa',
+    OptimizingInseparableStatesSimulation: 'optimizing-inseparable-states',
     SystemInteraction: 'system-interaction',
     Localization: 'localization',
 } as const;
@@ -35,6 +37,7 @@ export const AppModules = {
     [ModuleNames.DeterministicFiniteAutomata]: DFASimulation,
     [ModuleNames.Theme]: Theme,
     [ModuleNames.OptimizingInaccessibleStatesSimulation]: OptimizingInaccessibleStatesSimulation, // Adăugăm noua simulare
+    [ModuleNames.OptimizingInseparableStatesSimulation]: OptimizingInseparableStatesSimulation,
     [ModuleNames.SystemInteraction]: SystemInteraction,
 
 } as const;
